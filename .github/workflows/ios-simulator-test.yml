@@ -1,7 +1,19 @@
 name: iOS Simulator Smoke Test
 
+run-name: Safari · ${{ inputs.url || 'Home screen' }} · ${{ inputs.request_id || github.run_id }}
+
 on:
   workflow_dispatch:
+    inputs:
+      url:
+        description: Web address to open in Mobile Safari
+        required: false
+        default: https://www.apple.com
+        type: string
+      request_id:
+        description: Request identifier used by the local simulator UI
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -14,6 +26,8 @@ jobs:
     steps:
       - name: Boot an iPhone simulator and capture evidence
         shell: bash
+        env:
+          SAFARI_URL: ${{ inputs.url }}
         run: |
           set -euo pipefail
           mkdir -p artifacts
@@ -29,6 +43,19 @@ jobs:
           echo "Using simulator: $UDID" | tee artifacts/result.txt
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
+
+          URL="$SAFARI_URL"
+          if [[ -n "$URL" ]]; then
+            if [[ ! "$URL" =~ ^https?:// ]]; then
+              echo "Only http:// and https:// URLs are supported." | tee -a artifacts/result.txt
+              exit 1
+            fi
+
+            echo "Opening Safari URL: $URL" | tee -a artifacts/result.txt
+            xcrun simctl openurl "$UDID" "$URL"
+            sleep 15
+          fi
+
           xcrun simctl io "$UDID" screenshot artifacts/ios-simulator.png
           xcrun simctl list devices | tee artifacts/final-device-state.txt
 
