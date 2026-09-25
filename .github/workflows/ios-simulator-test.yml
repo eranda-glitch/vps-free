@@ -1,0 +1,42 @@
+name: iOS Simulator Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 15
+
+    steps:
+      - name: Boot an iPhone simulator and capture evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          xcodebuild -version | tee artifacts/xcode-version.txt
+          xcrun simctl list devices available | tee artifacts/available-devices.txt
+
+          UDID="$(xcrun simctl list devices available | grep -m1 'iPhone' | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')"
+          if [[ ! "$UDID" =~ ^[0-9A-Fa-f-]{36}$ ]]; then
+            echo "No available iPhone simulator was found." | tee artifacts/result.txt
+            exit 1
+          fi
+
+          echo "Using simulator: $UDID" | tee artifacts/result.txt
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl io "$UDID" screenshot artifacts/ios-simulator.png
+          xcrun simctl list devices | tee artifacts/final-device-state.txt
+
+      - name: Upload screenshot and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-proof
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
