@@ -10,7 +10,7 @@ esac
 mkdir -p "$APP" artifacts
 xcrun --sdk "$SDK" clang -target "$TARGET" -isysroot "$(xcrun --sdk "$SDK" --show-sdk-path)" \
   -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter \
-  -framework UIKit -framework WebKit -framework Foundation FlappyWeb.m -o "$APP/FlappyWeb"
+  -framework UIKit -framework WebKit -framework Foundation -framework CoreGraphics FlappyWeb.m -o "$APP/FlappyWeb"
 cp Info.plist "$APP/Info.plist"
 cp AppIcon60x60@2x.png AppIcon60x60@3x.png "$APP/"
 /usr/libexec/PlistBuddy -c "Add :CFBundleSupportedPlatforms array" "$APP/Info.plist"
