@@ -1,0 +1,63 @@
+name: Build Flappy Web IPA
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Build unsigned iPhone IPA
+        run: bash build-ios.sh iphoneos
+      - name: Build simulator app
+        run: bash build-ios.sh iphonesimulator
+      - name: Launch app in iPhone simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          UDID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if x.get("isAvailable") and "iPhone" in x["name"]))')"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time '9:41' --batteryState charged --batteryLevel 100
+          xcrun simctl install "$UDID" build/simulator/FlappyWeb.app
+          xcrun simctl launch --console "$UDID" io.github.eranda-glitch.flappyweb > artifacts/simulator.log 2>&1 &
+          LAUNCH_PID=$!
+          trap 'kill "$LAUNCH_PID" 2>/dev/null || true; xcrun simctl shutdown "$UDID" || true' EXIT
+          LOADED=0
+          for i in {1..30}; do
+            if grep -q 'FLAPPY_WEB_LOADED' artifacts/simulator.log; then LOADED=1; break; fi
+            if grep -q 'FLAPPY_WEB_FAILED' artifacts/simulator.log; then break; fi
+            sleep 2
+          done
+          sleep 10
+          xcrun simctl io "$UDID" screenshot artifacts/simulator.png
+          if [[ "$LOADED" != 1 ]]; then
+            cat artifacts/simulator.log
+            echo 'The app did not confirm a successful website load.' >&2
+            exit 1
+          fi
+          echo 'Simulator app launched and website navigation completed.' > artifacts/smoke-test.txt
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlappyWeb-unsigned-ipa
+          path: |
+            artifacts/FlappyWeb-unsigned.ipa
+            artifacts/SHA256SUMS.txt
+            FLAPPY-WEB-README.md
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlappyWeb-build-evidence
+          path: |
+            artifacts/*.txt
+            artifacts/*.log
+            artifacts/*.png
+          if-no-files-found: warn
+          retention-days: 30
