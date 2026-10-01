@@ -27,7 +27,7 @@ if [[ "$SDK" == "iphoneos" ]]; then
     echo 'Device executable must be unsigned' >&2; exit 1
   fi
   file "$APP/FlappyWeb" | tee artifacts/device-binary.txt
-  xcrun lipo -verify_arch arm64 "$APP/FlappyWeb"
+  xcrun lipo "$APP/FlappyWeb" -verify_arch arm64
   (cd build/device && /usr/bin/zip -q -r ../../artifacts/FlappyWeb-unsigned.ipa Payload)
   unzip -t artifacts/FlappyWeb-unsigned.ipa
   shasum -a 256 artifacts/FlappyWeb-unsigned.ipa | tee artifacts/SHA256SUMS.txt
