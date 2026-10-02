@@ -73,6 +73,68 @@ jobs:
               plistlib.dump(info, f, sort_keys=False)
           PY
 
+      - name: Fix passcode theme importing
+        run: |
+          python3 - <<'PY'
+          import pathlib
+
+          view_model = pathlib.Path('AirCardsSource/ios-app/AppViewModel.swift')
+          source = view_model.read_text()
+          method_start = source.index('    func loadPassthm(url: URL) {')
+          method_end = source.index('    func loadPassthmFromDocuments(filename: String) {', method_start)
+          fixed_method = '''    func loadPassthm(url: URL) {
+              let displayName = url.deletingPathExtension().lastPathComponent
+              let originalPath = url.path
+              let stagedURL = FileManager.default.temporaryDirectory
+                  .appendingPathComponent("aircard_import_\(UUID().uuidString).passthm")
+
+              errorMessage = nil
+              do {
+                  try FileManager.default.copyItem(at: url, to: stagedURL)
+              } catch {
+                  errorMessage = "Could not import the selected .passthm file: \(error.localizedDescription)"
+                  return
+              }
+
+              Task.detached {
+                  defer { try? FileManager.default.removeItem(at: stagedURL) }
+                  let result = PasscodeThemeReader.inspect(url: stagedURL)
+                  await MainActor.run {
+                      if let (keys, rawData, count) = result {
+                          self.loadedTheme = PasscodeThemeInfo(
+                              name: displayName,
+                              filePath: originalPath,
+                              fileCount: count,
+                              keysPreview: keys,
+                              rawKeyData: rawData
+                          )
+                      } else {
+                          self.errorMessage = "Failed to read .passthm — invalid or unsupported format."
+                      }
+                  }
+              }
+          }
+
+          '''
+          source = source[:method_start] + fixed_method + source[method_end:]
+          view_model.write_text(source)
+
+          content_view = pathlib.Path('AirCardsSource/ios-app/ContentView.swift')
+          source = content_view.read_text()
+          old_types = '''                    UTType(filenameExtension: "passthm") ?? .archive,
+                              UTType.zip,
+                              UTType.archive
+          '''
+          new_types = '''                    UTType(filenameExtension: "passthm") ?? .archive,
+                              UTType.zip,
+                              UTType.archive,
+                              UTType.data
+          '''
+          if old_types not in source:
+              raise RuntimeError('Passcode document picker definition was not found')
+          content_view.write_text(source.replace(old_types, new_types, 1))
+          PY
+
       - name: Remove donation interface
         run: |
           python3 - <<'PY'
