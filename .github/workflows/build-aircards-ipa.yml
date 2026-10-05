@@ -291,6 +291,217 @@ jobs:
           content_view.write_text(source.replace(built_in_anchor, built_in_ui + built_in_anchor, 1))
           PY
 
+      - name: Add Tendies and Batter wallpaper importing
+        run: |
+          python3 - <<'PY'
+          import pathlib, plistlib
+
+          view_model = pathlib.Path('AirCardsSource/ios-app/AppViewModel.swift')
+          source = view_model.read_text()
+          source = source.replace(
+              'for u in rootItems where u.pathExtension.lowercased() == "tendies" {',
+              'for u in rootItems where ["tendies", "batter"].contains(u.pathExtension.lowercased()) {',
+              1
+          )
+          source = source.replace(
+              'for u in storedItems where u.pathExtension.lowercased() == "tendies" {',
+              'for u in storedItems where ["tendies", "batter"].contains(u.pathExtension.lowercased()) {',
+              1
+          )
+          if source.count('["tendies", "batter"].contains') != 2:
+              raise RuntimeError('Wallpaper archive discovery patch did not apply')
+          view_model.write_text(source)
+
+          tendies_view = pathlib.Path('AirCardsSource/ios-app/TendiesView.swift')
+          source = tendies_view.read_text()
+          picker_anchor = '''        if let extType = UTType(filenameExtension: "tendies") {
+              contentTypes.append(extType)
+          }
+          '''
+          picker_replacement = picker_anchor + '''        if let batterType = UTType(filenameExtension: "batter") {
+              contentTypes.append(batterType)
+          }
+          '''
+          if picker_anchor not in source:
+              raise RuntimeError('Wallpaper picker insertion point was not found')
+          source = source.replace(picker_anchor, picker_replacement, 1)
+          source = source.replace('Choose .tendies from Files…', 'Choose .tendies or .batter…')
+          source = source.replace('No .tendies wallpapers loaded yet', 'No wallpaper packages loaded yet')
+          source = source.replace(
+              "Tap 'Choose .tendies from Files' or copy wallpapers into On My iPhone › AirCard-iOS.",
+              "Choose a .tendies or .batter file, or copy one into On My iPhone › AirCard-iOS."
+          )
+          tendies_view.write_text(source)
+
+          engine = pathlib.Path('AirCardsSource/ios-app/TendiesEngine.swift')
+          source = engine.read_text()
+          function_start = source.index('    private func findDescriptorsWithExtensions(in rootURL: URL, defaultExt: String)')
+          function_end_marker = '        return results.isEmpty ? [(ext: defaultExt, url: rootURL)] : results\n    }'
+          function_end = source.index(function_end_marker, function_start) + len(function_end_marker)
+          replacement = '''    private func wallpaperPayloadRoot(in rootURL: URL, fileManager: FileManager) -> URL {
+              var current = rootURL
+              let layoutNames: Set<String> = [
+                  "container", "descriptors", "descriptor", "ordered-descriptors",
+                  "ordered-descriptor", "video-descriptors", "video-descriptor"
+              ]
+
+              // Batter templates commonly add one named wrapper folder plus __MACOSX.
+              // Descend through wrappers until a recognized wallpaper layout is reached.
+              for _ in 0..<5 {
+                  guard let entries = try? fileManager.contentsOfDirectory(
+                      at: current,
+                      includingPropertiesForKeys: [.isDirectoryKey],
+                      options: [.skipsHiddenFiles]
+                  ) else { return current }
+                  let directories = entries.filter {
+                      ((try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) &&
+                      $0.lastPathComponent.caseInsensitiveCompare("__MACOSX") != .orderedSame
+                  }
+                  if directories.contains(where: { layoutNames.contains($0.lastPathComponent.lowercased()) }) {
+                      return current
+                  }
+                  guard directories.count == 1 else { return current }
+                  current = directories[0]
+              }
+              return current
+          }
+
+          private func findDescriptorsWithExtensions(in rootURL: URL, defaultExt: String) -> [(ext: String, url: URL)] {
+              let fileManager = FileManager.default
+              var results: [(ext: String, url: URL)] = []
+              let payloadRoot = wallpaperPayloadRoot(in: rootURL, fileManager: fileManager)
+
+              // 1. Standard PosterBoard container, accepting Container or container.
+              let rootEntries = (try? fileManager.contentsOfDirectory(
+                  at: payloadRoot,
+                  includingPropertiesForKeys: [.isDirectoryKey],
+                  options: [.skipsHiddenFiles]
+              )) ?? []
+              let containerFolder = rootEntries.first {
+                  $0.lastPathComponent.caseInsensitiveCompare("container") == .orderedSame &&
+                  ((try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false)
+              }
+              let searchRoots = containerFolder.map { [$0, payloadRoot] } ?? [payloadRoot]
+
+              for searchRoot in searchRoots {
+                  for structureVersion in [61, 59] {
+                      let extensionsDir = searchRoot.appendingPathComponent(
+                          "Library/Application Support/PRBPosterExtensionDataStore/\(structureVersion)/Extensions"
+                      )
+                      guard fileManager.fileExists(atPath: extensionsDir.path),
+                            let extensionFolders = try? fileManager.contentsOfDirectory(
+                              at: extensionsDir,
+                              includingPropertiesForKeys: [.isDirectoryKey],
+                              options: [.skipsHiddenFiles]
+                            ) else { continue }
+                      for extensionFolder in extensionFolders {
+                          let descriptorDirectory = extensionFolder.appendingPathComponent("descriptors")
+                          guard let descriptorFolders = try? fileManager.contentsOfDirectory(
+                              at: descriptorDirectory,
+                              includingPropertiesForKeys: [.isDirectoryKey],
+                              options: [.skipsHiddenFiles]
+                          ) else { continue }
+                          for descriptor in descriptorFolders where
+                              ((try? descriptor.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) {
+                              if !descriptor.lastPathComponent.hasPrefix(".") &&
+                                  descriptor.lastPathComponent.caseInsensitiveCompare("__MACOSX") != .orderedSame {
+                                  results.append((ext: extensionFolder.lastPathComponent, url: descriptor))
+                              }
+                          }
+                      }
+                  }
+              }
+              if !results.isEmpty { return results }
+
+              // 2. Tendies and Batter descriptor directories.
+              for folderName in ["descriptors", "descriptor", "ordered-descriptors", "ordered-descriptor"] {
+                  let descriptorDirectory = payloadRoot.appendingPathComponent(folderName)
+                  guard let contents = try? fileManager.contentsOfDirectory(
+                      at: descriptorDirectory,
+                      includingPropertiesForKeys: [.isDirectoryKey],
+                      options: [.skipsHiddenFiles]
+                  ) else { continue }
+                  for descriptor in contents where
+                      ((try? descriptor.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) {
+                      if !descriptor.lastPathComponent.hasPrefix(".") &&
+                          descriptor.lastPathComponent.caseInsensitiveCompare("__MACOSX") != .orderedSame {
+                          results.append((ext: defaultExt, url: descriptor))
+                      }
+                  }
+              }
+              if !results.isEmpty { return results }
+
+              // 3. Suggested Photos/video descriptor directories.
+              for folderName in ["video-descriptors", "video-descriptor"] {
+                  let descriptorDirectory = payloadRoot.appendingPathComponent(folderName)
+                  guard let contents = try? fileManager.contentsOfDirectory(
+                      at: descriptorDirectory,
+                      includingPropertiesForKeys: [.isDirectoryKey],
+                      options: [.skipsHiddenFiles]
+                  ) else { continue }
+                  for descriptor in contents where
+                      ((try? descriptor.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) {
+                      if !descriptor.lastPathComponent.hasPrefix(".") &&
+                          descriptor.lastPathComponent.caseInsensitiveCompare("__MACOSX") != .orderedSame {
+                          results.append((ext: "com.apple.PhotosUIPrivate.PhotosPosterProvider", url: descriptor))
+                      }
+                  }
+              }
+              if !results.isEmpty { return results }
+
+              // 4. A single descriptor supplied as the payload root.
+              if fileManager.fileExists(atPath: payloadRoot.appendingPathComponent("versions").path) ||
+                  fileManager.fileExists(atPath: payloadRoot.appendingPathComponent("Wallpaper.plist").path) ||
+                  fileManager.fileExists(atPath: payloadRoot.appendingPathComponent("com.apple.posterkit.provider.descriptor.identifier").path) {
+                  return [(ext: defaultExt, url: payloadRoot)]
+              }
+
+              // 5. Flat collections of descriptor folders.
+              if let topLevel = try? fileManager.contentsOfDirectory(
+                  at: payloadRoot,
+                  includingPropertiesForKeys: [.isDirectoryKey],
+                  options: [.skipsHiddenFiles]
+              ) {
+                  for subfolder in topLevel where
+                      ((try? subfolder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) {
+                      let hasVersions = fileManager.fileExists(atPath: subfolder.appendingPathComponent("versions").path)
+                      let isUUID = UUID(uuidString: subfolder.lastPathComponent) != nil
+                      if (hasVersions || isUUID) &&
+                          subfolder.lastPathComponent.caseInsensitiveCompare("__MACOSX") != .orderedSame {
+                          results.append((ext: defaultExt, url: subfolder))
+                      }
+                  }
+              }
+
+              return results.isEmpty ? [(ext: defaultExt, url: payloadRoot)] : results
+          }'''
+          source = source[:function_start] + replacement + source[function_end:]
+          source = source.replace('Failed to extract .tendies zip archive', 'Failed to extract wallpaper archive')
+          engine.write_text(source)
+
+          plist_path = pathlib.Path('AirCardsSource/ios-app/Info.plist')
+          with plist_path.open('rb') as handle:
+              info = plistlib.load(handle)
+          imported = info.setdefault('UTImportedTypeDeclarations', [])
+          if not any(item.get('UTTypeIdentifier') == 'com.aircard.batter' for item in imported):
+              imported.append({
+                  'UTTypeIdentifier': 'com.aircard.batter',
+                  'UTTypeDescription': 'Configurable PosterBoard Wallpaper Template',
+                  'UTTypeConformsTo': ['public.data', 'public.archive', 'public.zip-archive'],
+                  'UTTypeTagSpecification': {'public.filename-extension': ['batter']},
+              })
+          document_types = info.setdefault('CFBundleDocumentTypes', [])
+          if not any('com.aircard.batter' in item.get('LSItemContentTypes', []) for item in document_types):
+              document_types.append({
+                  'CFBundleTypeName': 'Batter Wallpaper Template',
+                  'CFBundleTypeRole': 'Editor',
+                  'LSHandlerRank': 'Owner',
+                  'LSItemContentTypes': ['com.aircard.batter'],
+              })
+          with plist_path.open('wb') as handle:
+              plistlib.dump(info, handle, sort_keys=False)
+          PY
+
       - name: Remove donation interface
         run: |
           python3 - <<'PY'
