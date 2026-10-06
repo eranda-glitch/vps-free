@@ -1,0 +1,88 @@
+name: Build Senumy IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: senumy-ipa
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build unsigned Senumy.ipa
+    runs-on: macos-26
+    timeout-minutes: 360
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Extract Senumy source
+        run: |
+          mkdir Senumy
+          ditto -x -k Senumy-Husk-0.7.0-source.zip Senumy
+
+      - name: Show Apple toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install build tools
+        run: |
+          brew install autoconf automake bison flex gettext libtool meson ninja pkg-config qemu xcodegen
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
+          rustup target add aarch64-apple-ios
+
+      - name: Restore compiled dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            Senumy/third_party/sources
+            Senumy/third_party/build
+            Senumy/third_party/gpu
+            Senumy/build/ios-arm64
+            Senumy/guests/phase0
+            Senumy/src/rppairing-ios/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: senumy-ios-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Senumy-Husk-0.7.0-source.zip') }}
+          restore-keys: |
+            senumy-ios-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build unsigned IPA
+        working-directory: Senumy
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/ci_build.sh "$GITHUB_WORKSPACE/Senumy/build/Senumy.ipa"
+
+      - name: Verify Senumy identity
+        run: |
+          test -s Senumy/build/Senumy.ipa
+          unzip -p Senumy/build/Senumy.ipa Payload/Husk.app/Info.plist > /tmp/Senumy-Info.plist
+          test "$(plutil -extract CFBundleDisplayName raw /tmp/Senumy-Info.plist)" = "Senumy"
+          ls -lh Senumy/build/Senumy.ipa
+
+      - name: Upload Senumy IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Senumy-unsigned-ipa
+          path: Senumy/build/Senumy.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Senumy-build-logs
+          path: |
+            Senumy/build/logs
+            /tmp/husk_ipa/build.log
+          if-no-files-found: ignore
+          retention-days: 7
