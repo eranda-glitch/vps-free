@@ -25,6 +25,10 @@ jobs:
           mkdir Senumy
           ditto -x -k Senumy-Husk-0.7.0-source.zip Senumy
 
+      - name: Use reliable GNU download mirror
+        working-directory: Senumy
+        run: |
+          sed -i '' 's#https://ftp.gnu.org/gnu/#https://www.mirrorservice.org/sites/ftp.gnu.org/gnu/#g' scripts/sources.sh
       - name: Show Apple toolchain
         run: |
           sw_vers
