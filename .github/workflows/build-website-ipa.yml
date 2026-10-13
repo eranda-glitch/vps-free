@@ -1,4 +1,4 @@
-name: Build Website IPA
+self.window.rootViewController = [[GameViewController alloc] init];name: Build Website IPA
 run-name: Web IPA - ${{ inputs.request_id }}
 on:
   workflow_dispatch:
