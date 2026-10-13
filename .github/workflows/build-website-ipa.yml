@@ -1,4 +1,4 @@
-self.window.rootViewController = [[GameViewController alloc] init];name: Build Website IPA
+name: Build Website IPA
 run-name: Web IPA - ${{ inputs.request_id }}
 on:
   workflow_dispatch:
@@ -58,11 +58,7 @@ jobs:
           @implementation GameViewController
           - (void)viewDidLoad {
               [super viewDidLoad];
-              self.title = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"];
               self.view.backgroundColor = UIColor.systemBackgroundColor;
-              self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
-                  initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
-                  target:self action:@selector(loadGame)];
               WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
               configuration.allowsInlineMediaPlayback = YES;
               self.webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:configuration];
@@ -121,7 +117,7 @@ jobs:
           @implementation AppDelegate
           - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
               self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-              self.window.rootViewController = [[UINavigationController alloc] initWithRootViewController:[[GameViewController alloc] init]];
+              self.window.rootViewController = [[GameViewController alloc] init];
               [self.window makeKeyAndVisible];
               return YES;
           }
