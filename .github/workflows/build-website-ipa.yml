@@ -71,12 +71,11 @@ jobs:
               self.webView.scrollView.backgroundColor = loadingColor;
               self.webView.translatesAutoresizingMaskIntoConstraints = NO;
               [self.view addSubview:self.webView];
-              UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
               [NSLayoutConstraint activateConstraints:@[
-                  [self.webView.topAnchor constraintEqualToAnchor:safe.topAnchor],
-                  [self.webView.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
-                  [self.webView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
-                  [self.webView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor]
+                  [self.webView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+                  [self.webView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+                  [self.webView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+                  [self.webView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor]
               ]];
               self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
               self.spinner.translatesAutoresizingMaskIntoConstraints = NO;
