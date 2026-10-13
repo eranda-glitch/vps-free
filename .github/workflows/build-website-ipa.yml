@@ -11,6 +11,11 @@ on:
         description: App display name (1-30 characters)
         type: string
         required: true
+      icon_url:
+        description: Optional HTTPS PNG, JPEG or WebP app icon
+        type: string
+        required: false
+        default: ''
       bundle_id:
         description: Unique bundle ID (com.yourname.myapp)
         type: string
@@ -30,17 +35,24 @@ jobs:
         env:
           WEBSITE_URL: ${{ inputs.website_url }}
           APP_NAME: ${{ inputs.app_name }}
+          ICON_URL: ${{ inputs.icon_url }}
           BUNDLE_ID: ${{ inputs.bundle_id }}
           REQUEST_ID: ${{ inputs.request_id }}
         run: |
           python3 - <<'PY'
           import os, re, urllib.parse
           url = os.environ['WEBSITE_URL']
+          icon_url = os.environ['ICON_URL']
           parsed = urllib.parse.urlsplit(url)
           assert len(url) <= 2048 and parsed.scheme == 'https' and parsed.hostname and '.' in parsed.hostname, 'Use a public HTTPS URL'
           assert parsed.username is None and parsed.password is None, 'Credentials in URLs are not supported'
           assert not re.search(r'[\x00-\x20\x7f]', url), 'Invalid URL characters'
           assert re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9 ._-]{0,29}', os.environ['APP_NAME']), 'Invalid app name'
+          if icon_url:
+              icon = urllib.parse.urlsplit(icon_url)
+              assert len(icon_url) <= 2048 and icon.scheme == 'https' and icon.hostname and '.' in icon.hostname, 'Use a public HTTPS icon URL'
+              assert icon.username is None and icon.password is None, 'Credentials in icon URLs are not supported'
+              assert not re.search(r'[\x00-\x20\x7f]', icon_url), 'Invalid icon URL characters'
           assert len(os.environ['BUNDLE_ID']) <= 150 and re.fullmatch(r'[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*)+', os.environ['BUNDLE_ID']), 'Invalid bundle ID'
           assert re.fullmatch(r'[a-f0-9]{32}', os.environ['REQUEST_ID']), 'Invalid request identifier'
           PY
@@ -223,6 +235,17 @@ jobs:
           IPA_TEMPLATE_EOF
           printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAMrSURBVHhe7dy9axRBGMfx/BHpLO3sLO0srdRChDTa+AIqaKGFL4hyIKIGPAg2BoxVEPQa0ShooSiKIgqx0EILuzRqQNEEzIbn4Cxm0bu9nZ195sf3gW9z3HLDfNiQy5KZmDywvSDdJsIXSCuAxQNYPIDFA1g8gMUDWDyAxQNYPIDFA1g8gMUDWDyAxQNYPIDFA1g8gMUDWDyAxQNYPIDFA1g8gMUDWDyAxQNYPIDFA1g8gMUDWDyAxcseuNO7Wbz+9KHwNL9WV4qDs9OltbZR1sC9V0/DvXU15+/MldacumyB91+/HO6nu/mztlZad+qyBb7xZCHcT5ezc/pMae0pyxb48fs34V66nJmHvdLaU5Yt8NWF2+FeupypmU5p7SnLFnjzyX3F79WVcD/dzY4rp0prT1m2wNaeaxeK7z9/hHvqagCu2abje4vTt2aLS3fnG+v+u5eh28gDsPOOzHVDs0oDsOPq4toA7LQYuDYAOywWrg3AzoqJawOwo6riLi1/C18qDcBOqoq7+OVz0X0w/K9pADtoHNyNx6b635GHDcAtNy6uXQuw8+rgWgA7ri6uBbDTYuBaADssFq4FsLNi4loAOyo2rgWwk5rAtQB2UFO4FsAt1ySuBXCLNY1rAdxSKXAtgFsoFa4FcOJS4loAJyw1rgVwotrAtQBOUFu4FsAN1yauBXCDtY1rAdxQHnAtgBvIC65lB8AMG4Ar5AnXMrxhY//9GF6XsmyAveFaGw7vKpaWv4Yf/XdsDeE1qcsC2CPuoN3dc+HH98dOH9jaOVp6f+rcA3vGHbTt4on+oTB22oDd0ffevii2nD1Uel8buQbOAdd7boHBjZNLYHDj5Q4Y3Li5AgY3fm6AwW0mF8D2fbHKqXXgjp4L4GcfF0PDfw641XIBPOrdC271sgEGd7xcAA/7EQ3u+LkA/t8vWeDWywWwZU9lwkdv888fgVszN8CD7G62B+nAxskdMMUNYPEAFg9g8QAWD2DxABYPYPEAFg9g8QAWD2DxABYPYPEAFg9g8QAWD2DxABYPYPEAFg9g8QAWD2DxABYPYPEAFg9g8QAWD2DxABZvHeby/3wfLGVoAAAAAElFTkSuQmCC' | base64 --decode > 'AppIcon60x60@2x.png'
           printf '%s' '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' | base64 --decode > 'AppIcon60x60@3x.png'
+      - name: Apply custom app icon
+        if: ${{ inputs.icon_url != '' }}
+        env:
+          ICON_URL: ${{ inputs.icon_url }}
+        run: |
+          curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 30 --max-filesize 5242880 "$ICON_URL" -o AppIconSource
+          sips -s format png AppIconSource --out AppIcon.png
+          sips -z 120 120 AppIcon.png --out AppIcon60x60@2x.png
+          sips -z 180 180 AppIcon.png --out AppIcon60x60@3x.png
+          test "$(stat -f%z AppIcon60x60@2x.png)" -gt 0
+          test "$(stat -f%z AppIcon60x60@3x.png)" -gt 0
       - name: Apply app settings
         env:
           WEBSITE_URL: ${{ inputs.website_url }}
