@@ -53,16 +53,22 @@ jobs:
           @interface GameViewController : UIViewController <WKNavigationDelegate>
           @property(nonatomic, strong) WKWebView *webView;
           @property(nonatomic, strong) UIActivityIndicatorView *spinner;
+          @property(nonatomic) UIStatusBarStyle appStatusBarStyle;
           @end
           
           @implementation GameViewController
           - (void)viewDidLoad {
               [super viewDidLoad];
-              self.view.backgroundColor = UIColor.systemBackgroundColor;
+              UIColor *loadingColor = [UIColor colorWithRed:0.07 green:0.07 blue:0.08 alpha:1.0];
+              self.appStatusBarStyle = UIStatusBarStyleLightContent;
+              self.view.backgroundColor = loadingColor;
               WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
               configuration.allowsInlineMediaPlayback = YES;
               self.webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:configuration];
               self.webView.navigationDelegate = self;
+              self.webView.opaque = NO;
+              self.webView.backgroundColor = loadingColor;
+              self.webView.scrollView.backgroundColor = loadingColor;
               self.webView.translatesAutoresizingMaskIntoConstraints = NO;
               [self.view addSubview:self.webView];
               UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
@@ -82,12 +88,34 @@ jobs:
               ]];
               [self loadGame];
           }
+          - (UIStatusBarStyle)preferredStatusBarStyle {
+              return self.appStatusBarStyle;
+          }
+          - (void)matchSafeAreaToWebsite {
+              NSString *script = @"(() => { const pick = (el) => { if (!el) return null; const value = getComputedStyle(el).backgroundColor; const parts = value && value.match(/[\\d.]+/g); if (!parts || parts.length < 3 || (parts.length > 3 && Number(parts[3]) === 0)) return null; return parts.slice(0, 3).map(Number); }; return pick(document.body) || pick(document.documentElement); })()";
+              __weak GameViewController *weakSelf = self;
+              [self.webView evaluateJavaScript:script completionHandler:^(id result, NSError *error) {
+                  if (error || ![result isKindOfClass:NSArray.class] || [(NSArray *)result count] < 3) return;
+                  NSArray *rgb = (NSArray *)result;
+                  CGFloat red = [rgb[0] doubleValue] / 255.0;
+                  CGFloat green = [rgb[1] doubleValue] / 255.0;
+                  CGFloat blue = [rgb[2] doubleValue] / 255.0;
+                  UIColor *color = [UIColor colorWithRed:red green:green blue:blue alpha:1.0];
+                  weakSelf.view.backgroundColor = color;
+                  weakSelf.webView.backgroundColor = color;
+                  weakSelf.webView.scrollView.backgroundColor = color;
+                  CGFloat luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+                  weakSelf.appStatusBarStyle = luminance < 0.55 ? UIStatusBarStyleLightContent : UIStatusBarStyleDarkContent;
+                  [weakSelf setNeedsStatusBarAppearanceUpdate];
+              }];
+          }
           - (void)loadGame {
               [self.spinner startAnimating];
               [self.webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"WebsiteURL"]]]];
           }
           - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
               [self.spinner stopAnimating];
+              [self matchSafeAreaToWebsite];
               NSLog(@"WEB_APP_LOADED %@", webView.URL.absoluteString);
           }
           - (void)showError:(NSError *)error {
